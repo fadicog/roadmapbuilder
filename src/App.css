@@ -335,6 +335,99 @@ body {
   color: var(--text-muted);
 }
 
+/* Item List Header Actions */
+.item-list-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+/* Sort by Date Button */
+.sort-by-date-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8125rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.sort-by-date-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sort-icon {
+  flex-shrink: 0;
+}
+
+/* Drag Handle */
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex-shrink: 0;
+  cursor: grab;
+  color: var(--text-muted);
+  padding: 4px 2px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease, background-color 0.15s ease;
+  user-select: none;
+}
+
+.drag-handle:hover {
+  color: var(--text-secondary);
+  background-color: var(--bg-tertiary);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Drag States */
+.item-card.dragging {
+  opacity: 0.4;
+  border-style: dashed;
+  border-color: var(--color-primary-light);
+  background: var(--bg-tertiary);
+}
+
+.item-card.drop-above {
+  position: relative;
+}
+
+.item-card.drop-above::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--color-primary);
+  border-radius: 2px;
+  z-index: 10;
+  box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
+}
+
+.item-card.drop-below {
+  position: relative;
+}
+
+.item-card.drop-below::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--color-primary);
+  border-radius: 2px;
+  z-index: 10;
+  box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
+}
+
 .item-actions {
   display: flex;
   gap: var(--spacing-xs);
@@ -683,6 +776,29 @@ body {
   flex: 1;
 }
 
+/* Category Select in Edit Form */
+.category-select-wrapper {
+  position: relative;
+}
+
+.category-select {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  appearance: auto;
+}
+
+.category-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
 .form-error {
   color: var(--color-danger);
   font-size: 0.8125rem;
@@ -977,11 +1093,13 @@ body {
 }
 
 .group-label {
-  max-width: 150px;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.9375rem;
+  line-height: 1.4;
 }
 
 .subtask-group-label {

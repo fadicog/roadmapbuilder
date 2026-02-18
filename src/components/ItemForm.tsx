@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useRoadmapStore, useSprintConfig, useDisplaySprintCount, useTimingUnit } from '../store/roadmapStore';
 import { sprintStartDate, sprintEndDate, toISODateString } from '../utils/workingDays';
+import { ALL_CATEGORIES, CATEGORY_COLORS } from '../data/poolItems';
 import type { RoadmapItem } from '../types';
 
 interface ItemFormProps {
@@ -40,6 +41,7 @@ export function ItemForm({ onCancel, editingItem }: ItemFormProps) {
 
   const [error, setError] = useState<string | null>(null);
   const [externalVisible, setExternalVisible] = useState(editingItem?.externalVisible ?? false);
+  const [category, setCategory] = useState(editingItem?.category || '');
 
   // Generate sprint options
   const sprintOptions: number[] = [];
@@ -64,7 +66,7 @@ export function ItemForm({ onCancel, editingItem }: ItemFormProps) {
       }
 
       if (editingItem) {
-        updateItem(editingItem.id, { name: name.trim(), startSprint, endSprint, externalVisible });
+        updateItem(editingItem.id, { name: name.trim(), startSprint, endSprint, externalVisible, category: category || undefined });
       } else {
         addItemBySprint(name.trim(), startSprint, endSprint);
       }
@@ -76,7 +78,7 @@ export function ItemForm({ onCancel, editingItem }: ItemFormProps) {
       }
 
       if (editingItem) {
-        updateItem(editingItem.id, { name: name.trim(), startDate, endDate, externalVisible });
+        updateItem(editingItem.id, { name: name.trim(), startDate, endDate, externalVisible, category: category || undefined });
       } else {
         addItemByDate(name.trim(), startDate, endDate);
       }
@@ -113,6 +115,30 @@ export function ItemForm({ onCancel, editingItem }: ItemFormProps) {
           autoFocus
         />
       </div>
+
+      {editingItem && (
+        <div className="form-group">
+          <label htmlFor="item-category">Category</label>
+          <div className="category-select-wrapper">
+            <select
+              id="item-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="category-select"
+              style={category && CATEGORY_COLORS[category] ? {
+                backgroundColor: CATEGORY_COLORS[category].bg,
+                color: CATEGORY_COLORS[category].text,
+                borderColor: CATEGORY_COLORS[category].border,
+              } : undefined}
+            >
+              <option value="">No category</option>
+              {ALL_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {showSprintMode ? (
         <div className="form-row">

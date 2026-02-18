@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useItems, useRoadmapStore, useSprintConfig, useDisplaySprintCount } from '../store/roadmapStore';
 import { ItemForm } from './ItemForm';
 import { SubtaskEditor } from './SubtaskEditor';
@@ -163,12 +163,18 @@ export function ItemList() {
   const items = useItems();
   const sprintConfig = useSprintConfig();
   const displaySprintCount = useDisplaySprintCount();
-  const { deleteItem } = useRoadmapStore();
+  const { deleteItem, reorderItems, sortItemsByStartDate } = useRoadmapStore();
 
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingSprintRangeId, setEditingSprintRangeId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // Drag-and-drop state
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
+  const dragCounter = useRef(0);
 
   const toggleExpand = (id: string) => {
     setExpandedItems((prev) => {
@@ -193,16 +199,125 @@ export function ItemList() {
     }
   };
 
+  // --- Drag-and-drop handlers ---
+  const handleDragStart = useCallback((e: React.DragEvent, itemId: string) => {
+    setDraggedItemId(itemId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', itemId);
+    // Add a slight delay to allow the drag image to form before styling
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-item-id="${itemId}"]`) as HTMLElement | null;
+      if (el) el.classList.add('dragging');
+    });
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    // Clean up all drag states
+    const el = draggedItemId ? document.querySelector(`[data-item-id="${draggedItemId}"]`) as HTMLElement | null : null;
+    if (el) el.classList.remove('dragging');
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+    setDropPosition(null);
+    dragCounter.current = 0;
+  }, [draggedItemId]);
+
+  const handleDragOver = useCallback((e: React.DragEvent, itemId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (itemId === draggedItemId) return;
+
+    // Determine if cursor is in top half or bottom half of the card
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const position = e.clientY < midY ? 'above' : 'below';
+
+    setDragOverItemId(itemId);
+    setDropPosition(position);
+  }, [draggedItemId]);
+
+  const handleDragEnter = useCallback((e: React.DragEvent, itemId: string) => {
+    e.preventDefault();
+    dragCounter.current++;
+    if (itemId !== draggedItemId) {
+      setDragOverItemId(itemId);
+    }
+  }, [draggedItemId]);
+
+  const handleDragLeave = useCallback((_e: React.DragEvent) => {
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setDragOverItemId(null);
+      setDropPosition(null);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetItemId: string) => {
+    e.preventDefault();
+    dragCounter.current = 0;
+
+    if (!draggedItemId || draggedItemId === targetItemId) {
+      handleDragEnd();
+      return;
+    }
+
+    // Build the new order
+    const currentIds = items.map((item) => item.id);
+    const dragIdx = currentIds.indexOf(draggedItemId);
+    const targetIdx = currentIds.indexOf(targetItemId);
+
+    if (dragIdx === -1 || targetIdx === -1) {
+      handleDragEnd();
+      return;
+    }
+
+    // Remove dragged item from list
+    const newIds = currentIds.filter((id) => id !== draggedItemId);
+
+    // Find where to insert
+    let insertIdx = newIds.indexOf(targetItemId);
+    if (dropPosition === 'below') {
+      insertIdx += 1;
+    }
+
+    // Insert at new position
+    newIds.splice(insertIdx, 0, draggedItemId);
+
+    reorderItems(newIds);
+    handleDragEnd();
+  }, [draggedItemId, dropPosition, items, reorderItems, handleDragEnd]);
+
+  // --- Sort handler ---
+  const handleSortByDate = useCallback(() => {
+    sortItemsByStartDate();
+  }, [sortItemsByStartDate]);
+
   return (
     <div className="item-list">
       <div className="item-list-header">
         <h3>Roadmap Items</h3>
-        <button
-          className="btn btn-primary"
-          onClick={() => setShowAddForm(true)}
-        >
-          + Add Item
-        </button>
+        <div className="item-list-header-actions">
+          <button
+            className="btn btn-small btn-secondary sort-by-date-btn"
+            onClick={handleSortByDate}
+            title="Sort items by start date (earliest first)"
+            disabled={items.length < 2}
+          >
+            <svg className="sort-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 4L7 1L12 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M2 10L7 13L12 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            Sort by Date
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowAddForm(true)}
+          >
+            + Add Item
+          </button>
+        </div>
       </div>
 
       {showAddForm && (
@@ -223,16 +338,50 @@ export function ItemList() {
           const isEditing = editingItemId === item.id;
           const { start, end, displayText } = getItemDates(item, sprintConfig);
           const isSprintBased = item.startSprint !== undefined;
+          const isDragTarget = dragOverItemId === item.id && draggedItemId !== item.id;
 
           return (
-            <div key={item.id} className={`item-card ${isExpanded ? 'expanded' : ''}`}>
+            <div
+              key={item.id}
+              data-item-id={item.id}
+              className={[
+                'item-card',
+                isExpanded ? 'expanded' : '',
+                isDragTarget && dropPosition === 'above' ? 'drop-above' : '',
+                isDragTarget && dropPosition === 'below' ? 'drop-below' : '',
+              ].filter(Boolean).join(' ')}
+              onDragOver={(e) => handleDragOver(e, item.id)}
+              onDragEnter={(e) => handleDragEnter(e, item.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, item.id)}
+            >
               <div className="item-row">
+                {/* Drag handle */}
+                <div
+                  className="drag-handle"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, item.id)}
+                  onDragEnd={handleDragEnd}
+                  title="Drag to reorder"
+                >
+                  <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+                    <circle cx="3" cy="2" r="1.5" />
+                    <circle cx="9" cy="2" r="1.5" />
+                    <circle cx="3" cy="6" r="1.5" />
+                    <circle cx="9" cy="6" r="1.5" />
+                    <circle cx="3" cy="10" r="1.5" />
+                    <circle cx="9" cy="10" r="1.5" />
+                    <circle cx="3" cy="14" r="1.5" />
+                    <circle cx="9" cy="14" r="1.5" />
+                  </svg>
+                </div>
+
                 <button
                   className="expand-btn"
                   onClick={() => toggleExpand(item.id)}
                   title={isExpanded ? 'Collapse' : 'Expand to edit subtasks'}
                 >
-                  {isExpanded ? '▼' : '▶'}
+                  {isExpanded ? '\u25BC' : '\u25B6'}
                 </button>
 
                 {isEditing ? (

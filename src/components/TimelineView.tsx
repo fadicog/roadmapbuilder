@@ -1176,7 +1176,7 @@ export function TimelineView() {
           label.style.cssText = `
             min-height: ${rowHeight}px;
             padding: 2px 12px 2px 0;
-            font-size: 10px;
+            font-size: 12px;
             font-weight: 500;
             color: #334155;
             display: flex;
@@ -1436,7 +1436,7 @@ export function TimelineView() {
           label.style.cssText = `
             min-height: 36px;
             padding: 4px 12px 4px 8px;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 500;
             color: #1e293b;
             display: flex;

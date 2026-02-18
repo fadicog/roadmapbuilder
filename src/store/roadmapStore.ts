@@ -52,7 +52,7 @@ interface RoadmapStore extends AppState {
     complexity: string,
     ddaItem: boolean
   ) => void;
-  updateItem: (id: string, updates: Partial<Pick<RoadmapItem, 'name' | 'startSprint' | 'endSprint' | 'startDate' | 'endDate' | 'externalVisible'>>) => void;
+  updateItem: (id: string, updates: Partial<Pick<RoadmapItem, 'name' | 'startSprint' | 'endSprint' | 'startDate' | 'endDate' | 'externalVisible' | 'category'>>) => void;
   deleteItem: (id: string) => void;
 
   // Actions - Subtasks
@@ -77,6 +77,10 @@ interface RoadmapStore extends AppState {
   setSelectedCategories: (categories: CategoryType[]) => void;
   toggleCategory: (category: CategoryType) => void;
   setShowExternalOnly: (show: boolean) => void;
+
+  // Actions - Reordering & Sorting
+  reorderItems: (orderedIds: string[]) => void;
+  sortItemsByStartDate: () => void;
 
   // Actions - Import/Export
   exportData: () => string;
@@ -216,7 +220,7 @@ export const useRoadmapStore = create<RoadmapStore>()(
       },
 
       // Update an existing item
-      updateItem: (id: string, updates: Partial<Pick<RoadmapItem, 'name' | 'startSprint' | 'endSprint' | 'startDate' | 'endDate' | 'externalVisible'>>) => {
+      updateItem: (id: string, updates: Partial<Pick<RoadmapItem, 'name' | 'startSprint' | 'endSprint' | 'startDate' | 'endDate' | 'externalVisible' | 'category'>>) => {
         const { sprintConfig, items } = get();
         const item = items.find((i) => i.id === id);
 
@@ -416,6 +420,59 @@ export const useRoadmapStore = create<RoadmapStore>()(
       // Set external roadmap filter
       setShowExternalOnly: (show: boolean) => {
         set({ showExternalOnly: show });
+      },
+
+      // Reorder items to match the given ordered list of IDs
+      reorderItems: (orderedIds: string[]) => {
+        set((state) => {
+          const itemMap = new Map(state.items.map((item) => [item.id, item]));
+          const reordered: typeof state.items = [];
+          // Place items in the order specified by orderedIds
+          orderedIds.forEach((id) => {
+            const item = itemMap.get(id);
+            if (item) {
+              reordered.push(item);
+              itemMap.delete(id);
+            }
+          });
+          // Append any items not in orderedIds (safety net)
+          itemMap.forEach((item) => reordered.push(item));
+          return { items: reordered };
+        });
+      },
+
+      // Sort items by start date (earliest first)
+      sortItemsByStartDate: () => {
+        const { sprintConfig } = get();
+        set((state) => {
+          const sorted = [...state.items].sort((a, b) => {
+            const getStartMs = (item: typeof a): number => {
+              if (item.startSprint !== undefined) {
+                // Compute date from sprint number
+                const sprintOffset = item.startSprint - sprintConfig.firstSprintNumber;
+                const startDate = new Date(sprintConfig.firstSprintStartDate);
+                // Rough calculation: each sprint is ~2 calendar weeks
+                let daysAdded = 0;
+                let workingDaysCounted = 0;
+                const targetWorkingDays = sprintOffset * sprintConfig.workingDaysPerSprint;
+                while (workingDaysCounted < targetWorkingDays) {
+                  startDate.setDate(startDate.getDate() + 1);
+                  daysAdded++;
+                  const day = startDate.getDay();
+                  if (!sprintConfig.weekendDays.includes(day)) {
+                    workingDaysCounted++;
+                  }
+                }
+                return startDate.getTime();
+              } else if (item.startDate) {
+                return new Date(item.startDate).getTime();
+              }
+              return Infinity; // Items without dates go last
+            };
+            return getStartMs(a) - getStartMs(b);
+          });
+          return { items: sorted };
+        });
       },
 
       // Export data as JSON string

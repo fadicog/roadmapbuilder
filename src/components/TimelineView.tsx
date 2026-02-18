@@ -16,6 +16,8 @@ import { addDays, subDays, isBefore, isAfter, format } from 'date-fns';
 import type { TimelineTimeAxisScaleType } from 'vis-timeline';
 import { CATEGORY_BAR_COLORS, getDefaultSprintDuration, ALL_CATEGORIES, type CategoryType } from '../data/poolItems';
 import type { PoolItem } from '../types';
+import { EpicEditModal } from './EpicEditModal';
+import { exportToPptx } from '../utils/pptxExport';
 
 // Export timeline display options
 type TimelineDisplayOption = 'sprints' | 'months' | 'both' | 'powerpoint';
@@ -100,14 +102,17 @@ function AddItemModal({ isOpen, startDate, endDate, onConfirm, onCancel }: AddIt
 }
 
 // Export Options Modal
+type ExportType = 'png' | 'pptx';
+
 interface ExportModalProps {
   isOpen: boolean;
-  onConfirm: (option: TimelineDisplayOption, exportCategories: CategoryType[], exportExternalOnly: boolean) => void;
+  onConfirm: (exportType: ExportType, option: TimelineDisplayOption, exportCategories: CategoryType[], exportExternalOnly: boolean) => void;
   onCancel: () => void;
 }
 
 function ExportModal({ isOpen, onConfirm, onCancel }: ExportModalProps) {
   const [selectedOption, setSelectedOption] = useState<TimelineDisplayOption>('both');
+  const [exportType, setExportType] = useState<ExportType>('png');
   const [exportCategories, setExportCategories] = useState<CategoryType[]>([...ALL_CATEGORIES]);
   const [exportExternalOnly, setExportExternalOnly] = useState(false);
 
@@ -136,9 +141,24 @@ function ExportModal({ isOpen, onConfirm, onCancel }: ExportModalProps) {
       <div className="modal-content export-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Export Roadmap</h3>
         <p className="export-description">
-          Export the roadmap as a high-quality PNG image suitable for PowerPoint presentations.
+          Export the roadmap as a PNG image or a PPTX file with one slide per epic.
         </p>
         <div className="form-group">
+          <label>Export Format</label>
+          <div className="export-options" style={{ marginBottom: '1rem' }}>
+            <label className="export-option">
+              <input type="radio" name="export-type" value="png" checked={exportType === 'png'} onChange={() => setExportType('png')} />
+              <span className="export-option-label">PNG Image</span>
+              <span className="export-option-desc">High-quality 1920x1080 image for presentations</span>
+            </label>
+            <label className="export-option">
+              <input type="radio" name="export-type" value="pptx" checked={exportType === 'pptx'} onChange={() => setExportType('pptx')} />
+              <span className="export-option-label">PowerPoint (PPTX)</span>
+              <span className="export-option-desc">One slide per epic with full details</span>
+            </label>
+          </div>
+        </div>
+        {exportType === 'png' && <div className="form-group">
           <label>Timeline Display</label>
           <div className="export-options">
             <label className="export-option">
@@ -186,7 +206,7 @@ function ExportModal({ isOpen, onConfirm, onCancel }: ExportModalProps) {
               <span className="export-option-desc">Clean one-page layout optimized for presentations</span>
             </label>
           </div>
-        </div>
+        </div>}
         <div className="form-group">
           <div className="export-category-header">
             <label>Categories to Include</label>
@@ -230,16 +250,19 @@ function ExportModal({ isOpen, onConfirm, onCancel }: ExportModalProps) {
           </label>
           <span className="export-hint">Only include items marked for external/public visibility</span>
         </div>
-        <div className="export-info">
+        {exportType === 'png' && <div className="export-info">
           <span>Output: 1920 x 1080 PNG (16:9)</span>
-        </div>
+        </div>}
+        {exportType === 'pptx' && <div className="export-info">
+          <span>Output: PPTX with one slide per epic (widescreen 16:9)</span>
+        </div>}
         <div className="form-actions">
           <button
             className="btn btn-primary"
-            onClick={() => onConfirm(selectedOption, exportCategories, exportExternalOnly)}
+            onClick={() => onConfirm(exportType, selectedOption, exportCategories, exportExternalOnly)}
             disabled={exportCategories.length === 0}
           >
-            Export Image
+            {exportType === 'pptx' ? 'Export PPTX' : 'Export Image'}
           </button>
           <button className="btn btn-secondary" onClick={onCancel}>
             Cancel
@@ -307,13 +330,17 @@ export function TimelineView() {
   const codeFreezeMarkers = useCodeFreezeMarkers();
   const sprintConfig = useSprintConfig();
   const displaySprintCount = useDisplaySprintCount();
-  const { updateSubtaskOverride, updateItem, addItemByDate, addFromPool, setShowSprintActivities, toggleCategory, setSelectedCategories, setShowExternalOnly } = useRoadmapStore();
+  const { updateSubtaskOverride, updateItem, deleteItem, addItemByDate, addFromPool, setShowSprintActivities, toggleCategory, setSelectedCategories, setShowExternalOnly } = useRoadmapStore();
   const showSprintActivities = useShowSprintActivities();
   const selectedCategories = useSelectedCategories();
   const showExternalOnly = useShowExternalOnly();
 
-  // Track which item is in edit mode
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  // Track which subtask is in edit mode (parent bars are always editable now)
+  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+
+  // Epic edit modal state
+  const [epicEditItemId, setEpicEditItemId] = useState<string | null>(null);
+  const epicEditItem = allItems.find(i => i.id === epicEditItemId) ?? null;
 
   // Export modal state
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -435,7 +462,6 @@ export function TimelineView() {
         itemEndDate = new Date();
       }
 
-      const isEditing = editingItemId === item.id || editingItemId === `parent-${item.id}`;
       const isDdaItem = item.ddaItem === true;
 
       // Parent item bar (shows the overall item duration) with category color
@@ -445,7 +471,6 @@ export function TimelineView() {
       // Build class list including DDA indicator
       const parentBarClasses = [
         'parent-bar',
-        isEditing ? 'editing' : '',
         isDdaItem ? 'dda-item' : '',
       ].filter(Boolean).join(' ');
 
@@ -464,11 +489,11 @@ export function TimelineView() {
           <em>Double-click to edit</em>
         `,
         style: `background-color: ${categoryColor}; border-color: ${categoryDarker};`,
-        editable: isEditing ? {
+        editable: {
           updateTime: true,
           updateGroup: false,
           remove: false,
-        } : false,
+        },
         itemId: item.id,
         isParentBar: true,
       });
@@ -486,7 +511,7 @@ export function TimelineView() {
           const workingDays = countWorkingDays(startDate, endDate);
           const displayEnd = addDays(endDate, 1);
 
-          const subtaskIsEditing = editingItemId === `${item.id}-${subtask.id}`;
+          const subtaskIsEditing = editingSubtaskId === `${item.id}-${subtask.id}`;
 
           result.push({
             id: `${item.id}-${subtask.id}`,
@@ -516,7 +541,7 @@ export function TimelineView() {
     });
 
     return result;
-  }, [items, sprints, editingItemId, showSprintActivities]);
+  }, [items, sprints, editingSubtaskId, showSprintActivities]);
 
   // Build custom time markers for releases
   const customTimes = useMemo(() => {
@@ -547,10 +572,15 @@ export function TimelineView() {
     return times;
   }, [codeFreezeMarkers, sprintConfig]);
 
-  // Handle double-click to enter edit mode
+  // Handle double-click to open epic edit modal or add item modal
   const handleDoubleClick = useCallback((properties: any) => {
     if (properties.item) {
-      setEditingItemId(properties.item);
+      const timelineItem = timelineItems.find(ti => ti.id === properties.item);
+      if (timelineItem?.isParentBar && timelineItem.itemId) {
+        setEpicEditItemId(timelineItem.itemId);
+      } else if (timelineItem?.subtaskId) {
+        setEditingSubtaskId(properties.item);
+      }
     } else if (properties.time) {
       // Double-click on empty area - open add item modal
       const clickTime = new Date(properties.time);
@@ -560,15 +590,14 @@ export function TimelineView() {
         endDate: addDays(clickTime, 13), // Default ~2 weeks
       });
     }
-  }, []);
+  }, [timelineItems]);
 
-  // Handle click to exit edit mode
+  // Handle click to exit subtask edit mode
   const handleClick = useCallback((properties: any) => {
-    // If clicking on a different item or empty space, exit edit mode
-    if (editingItemId && properties.item !== editingItemId) {
-      setEditingItemId(null);
+    if (editingSubtaskId && properties.item !== editingSubtaskId) {
+      setEditingSubtaskId(null);
     }
-  }, [editingItemId]);
+  }, [editingSubtaskId]);
 
   // Handle item move/resize
   const handleItemMove = useCallback((itemData: any, callback: (item: any) => void) => {
@@ -1027,7 +1056,7 @@ export function TimelineView() {
   }, [groups, timelineItems, customTimes, codeFreezeMarkers, codeFreezeCustomTimes, timelineRange, items.length, handleItemMove, handleDoubleClick, handleClick, updateSprintBands]);
 
   // Handle export
-  const handleExport = useCallback(async (option: TimelineDisplayOption, exportCategories: CategoryType[], exportExternalOnly: boolean) => {
+  const handleExport = useCallback(async (exportType: ExportType, option: TimelineDisplayOption, exportCategories: CategoryType[], exportExternalOnly: boolean) => {
     setExportModalOpen(false);
     setIsExporting(true);
 
@@ -1045,6 +1074,12 @@ export function TimelineView() {
         if (!item.category) return true; // Include items without category
         return exportCategories.includes(item.category as CategoryType);
       });
+
+      // PPTX export path
+      if (exportType === 'pptx') {
+        await exportToPptx(exportItems, sprintConfig);
+        return;
+      }
 
       // Create a temporary container for export
       const exportContainer = document.createElement('div');
@@ -1597,7 +1632,7 @@ export function TimelineView() {
     } finally {
       setIsExporting(false);
     }
-  }, [allItems, sprints, sprintConfig.firstSprintNumber]);
+  }, [allItems, sprints, sprintConfig]);
 
   const handleToggleCategory = useCallback((category: CategoryType) => {
     toggleCategory(category);
@@ -1675,10 +1710,10 @@ export function TimelineView() {
       </div>
 
       <div className="timeline-instructions">
-        <span>Double-click bar to edit</span>
+        <span>Double-click bar to open epic details</span>
         <span>Drag to move, drag edges to resize</span>
         <span>Double-click empty area to add item</span>
-        {editingItemId && <span className="editing-indicator">Editing mode - click outside to exit</span>}
+        {editingSubtaskId && <span className="editing-indicator">Editing subtask - click outside to exit</span>}
       </div>
 
       <div className="sprint-bands">
@@ -1812,6 +1847,16 @@ export function TimelineView() {
         onConfirm={handleExport}
         onCancel={() => setExportModalOpen(false)}
       />
+
+      {/* Epic Edit Modal */}
+      {epicEditItem && (
+        <EpicEditModal
+          item={epicEditItem}
+          isOpen={true}
+          onClose={() => setEpicEditItemId(null)}
+          onDelete={(id) => { deleteItem(id); setEpicEditItemId(null); }}
+        />
+      )}
     </div>
   );
 }

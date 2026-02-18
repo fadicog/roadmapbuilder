@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { temporal } from 'zundo';
 import { v4 as uuidv4 } from 'uuid';
 import type { AppState, RoadmapItem, ReleaseMarker, CodeFreezeMarker, SprintConfig, TimingUnit, PoolItem } from '../types';
 import { generateSubtasks, recalculateSubtasks, generateSubtasksFromDates } from '../utils/subtaskAllocation';
@@ -52,7 +53,7 @@ interface RoadmapStore extends AppState {
     complexity: string,
     ddaItem: boolean
   ) => void;
-  updateItem: (id: string, updates: Partial<Pick<RoadmapItem, 'name' | 'startSprint' | 'endSprint' | 'startDate' | 'endDate' | 'externalVisible' | 'category'>>) => void;
+  updateItem: (id: string, updates: Partial<Omit<RoadmapItem, 'id' | 'createdAt' | 'subtasks'>>) => void;
   deleteItem: (id: string) => void;
 
   // Actions - Subtasks
@@ -90,6 +91,7 @@ interface RoadmapStore extends AppState {
 
 export const useRoadmapStore = create<RoadmapStore>()(
   persist(
+    temporal(
     (set, get) => ({
       // Initial state
       sprintConfig: DEFAULT_CONFIG,
@@ -220,7 +222,7 @@ export const useRoadmapStore = create<RoadmapStore>()(
       },
 
       // Update an existing item
-      updateItem: (id: string, updates: Partial<Pick<RoadmapItem, 'name' | 'startSprint' | 'endSprint' | 'startDate' | 'endDate' | 'externalVisible' | 'category'>>) => {
+      updateItem: (id: string, updates: Partial<Omit<RoadmapItem, 'id' | 'createdAt' | 'subtasks'>>) => {
         const { sprintConfig, items } = get();
         const item = items.find((i) => i.id === id);
 
@@ -479,7 +481,7 @@ export const useRoadmapStore = create<RoadmapStore>()(
       exportData: () => {
         const { sprintConfig, items, releaseMarkers, codeFreezeMarkers, displaySprintCount, timingUnit, poolItems, showSprintActivities, selectedCategories, showExternalOnly } = get();
         const exportObj = {
-          version: '1.6',
+          version: '2.0',
           exportedAt: new Date().toISOString(),
           sprintConfig,
           items,
@@ -543,6 +545,11 @@ export const useRoadmapStore = create<RoadmapStore>()(
       },
     }),
     {
+      partialize: (state) => ({ items: (state as any).items }),
+      limit: 50,
+    }
+    ),
+    {
       name: 'roadmap-builder-storage',
     }
   )
@@ -569,3 +576,7 @@ export const useShowSprintActivities = () => useRoadmapStore((state) => state.sh
 export const useSelectedCategories = () => useRoadmapStore((state) => state.selectedCategories || []);
 // Show external roadmap only filter
 export const useShowExternalOnly = () => useRoadmapStore((state) => state.showExternalOnly ?? false);
+
+// Temporal store (undo/redo) access
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const getTemporalStore = () => (useRoadmapStore as any).temporal;

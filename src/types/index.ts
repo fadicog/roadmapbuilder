@@ -79,6 +79,14 @@ export interface RoadmapItem {
   poolComplexity?: string;
   ddaItem?: boolean; // True if this requires DDA approval
   externalVisible?: boolean; // True if this item should appear in external/public roadmap
+  // Extended epic fields
+  epicName?: string;
+  objectives?: string[];
+  description?: string;
+  acceptanceCriteria?: string[];
+  owners?: string[];
+  dependencies?: string[];
+  targetAudience?: string[];
 }
 
 // Release marker

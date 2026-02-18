@@ -8,4 +8,7 @@ export default defineConfig({
   build: {
     outDir: 'docs',
   },
+  optimizeDeps: {
+    include: ['pptxgenjs'],
+  },
 })

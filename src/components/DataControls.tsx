@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useRoadmapStore, useDisplaySprintCount, useSprintConfig, useTimingUnit } from '../store/roadmapStore';
 
 export function DataControls() {
-  const { exportData, importData, clearAllData, setDisplaySprintCount, updateSprintConfig, setTimingUnit } = useRoadmapStore();
+  const { exportData, importData, clearAllData, setDisplaySprintCount, updateSprintConfig, setTimingUnit, syncEpicDetailsFromPool } = useRoadmapStore();
   const displaySprintCount = useDisplaySprintCount();
   const sprintConfig = useSprintConfig();
   const timingUnit = useTimingUnit();
@@ -148,6 +148,9 @@ export function DataControls() {
           <div className="settings-group">
             <h4>Data Management</h4>
             <div className="data-actions">
+              <button className="btn btn-secondary" onClick={() => { syncEpicDetailsFromPool(); alert('Epic details synced from pool!'); }} title="Fill empty epic fields on roadmap items from matching pool items">
+                Sync Epic Details
+              </button>
               <button className="btn btn-secondary" onClick={handleExport}>
                 Export JSON
               </button>

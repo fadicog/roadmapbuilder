@@ -33,6 +33,8 @@ interface RoadmapStore extends AppState {
   selectedCategories: CategoryType[];
   // External roadmap filter - show only items marked for external/public visibility
   showExternalOnly: boolean;
+  // Timeline snap mode: 'day' snaps to day boundaries, 'sprint' snaps to sprint boundaries
+  snapMode: 'day' | 'sprint';
 
   // Actions - Pool Items
   addPoolItem: (item: Omit<PoolItem, 'number'>) => void;
@@ -83,10 +85,16 @@ interface RoadmapStore extends AppState {
   reorderItems: (orderedIds: string[]) => void;
   sortItemsByStartDate: () => void;
 
+  // Actions - Sync
+  syncEpicDetailsFromPool: () => void;
+
   // Actions - Import/Export
   exportData: () => string;
   importData: (jsonString: string) => boolean;
   clearAllData: () => void;
+
+  // Actions - Snap Mode
+  setSnapMode: (mode: 'day' | 'sprint') => void;
 }
 
 export const useRoadmapStore = create<RoadmapStore>()(
@@ -104,6 +112,7 @@ export const useRoadmapStore = create<RoadmapStore>()(
       showSprintActivities: false, // Hidden by default
       selectedCategories: [], // Empty = show all categories
       showExternalOnly: false, // Show all items by default
+      snapMode: 'day' as const, // Default to day-based snapping
 
       // Add a new pool item
       addPoolItem: (item: Omit<PoolItem, 'number'>) => {
@@ -214,6 +223,14 @@ export const useRoadmapStore = create<RoadmapStore>()(
           poolComplexity: complexity,
           ddaItem,
           externalVisible: isExternalVisible,
+          // Copy epic fields from pool item
+          epicName: poolItem?.epicName,
+          objectives: poolItem?.objectives,
+          description: poolItem?.description,
+          acceptanceCriteria: poolItem?.acceptanceCriteria,
+          owners: poolItem?.owners,
+          dependencies: poolItem?.dependencies,
+          targetAudience: poolItem?.targetAudience,
         };
 
         set((state) => ({
@@ -443,6 +460,33 @@ export const useRoadmapStore = create<RoadmapStore>()(
         });
       },
 
+      // Sync epic details from pool items to roadmap items (fills empty fields only)
+      syncEpicDetailsFromPool: () => {
+        set((state) => ({
+          items: state.items.map((item) => {
+            if (item.poolItemNumber === undefined) return item;
+            const poolItem = state.poolItems.find(p => p.number === item.poolItemNumber);
+            if (!poolItem) return item;
+            return {
+              ...item,
+              epicName: item.epicName || poolItem.epicName,
+              objectives: (item.objectives?.length ? item.objectives : poolItem.objectives) ?? item.objectives,
+              description: item.description || poolItem.description,
+              acceptanceCriteria: (item.acceptanceCriteria?.length ? item.acceptanceCriteria : poolItem.acceptanceCriteria) ?? item.acceptanceCriteria,
+              owners: (item.owners?.length ? item.owners : poolItem.owners) ?? item.owners,
+              dependencies: (item.dependencies?.length ? item.dependencies : poolItem.dependencies) ?? item.dependencies,
+              targetAudience: (item.targetAudience?.length ? item.targetAudience : poolItem.targetAudience) ?? item.targetAudience,
+              updatedAt: new Date().toISOString(),
+            };
+          }),
+        }));
+      },
+
+      // Set snap mode
+      setSnapMode: (mode: 'day' | 'sprint') => {
+        set({ snapMode: mode });
+      },
+
       // Sort items by start date (earliest first)
       sortItemsByStartDate: () => {
         const { sprintConfig } = get();
@@ -479,7 +523,7 @@ export const useRoadmapStore = create<RoadmapStore>()(
 
       // Export data as JSON string
       exportData: () => {
-        const { sprintConfig, items, releaseMarkers, codeFreezeMarkers, displaySprintCount, timingUnit, poolItems, showSprintActivities, selectedCategories, showExternalOnly } = get();
+        const { sprintConfig, items, releaseMarkers, codeFreezeMarkers, displaySprintCount, timingUnit, poolItems, showSprintActivities, selectedCategories, showExternalOnly, snapMode } = get();
         const exportObj = {
           version: '2.0',
           exportedAt: new Date().toISOString(),
@@ -493,6 +537,7 @@ export const useRoadmapStore = create<RoadmapStore>()(
           showSprintActivities,
           selectedCategories,
           showExternalOnly,
+          snapMode,
         };
         return JSON.stringify(exportObj, null, 2);
       },
@@ -519,6 +564,7 @@ export const useRoadmapStore = create<RoadmapStore>()(
             showSprintActivities: data.showSprintActivities ?? false,
             selectedCategories: data.selectedCategories || [],
             showExternalOnly: data.showExternalOnly ?? false,
+            snapMode: data.snapMode || 'day',
           });
 
           return true;
@@ -541,6 +587,7 @@ export const useRoadmapStore = create<RoadmapStore>()(
           showSprintActivities: false,
           selectedCategories: [],
           showExternalOnly: false,
+          snapMode: 'day',
         });
       },
     }),
@@ -576,6 +623,10 @@ export const useShowSprintActivities = () => useRoadmapStore((state) => state.sh
 export const useSelectedCategories = () => useRoadmapStore((state) => state.selectedCategories || []);
 // Show external roadmap only filter
 export const useShowExternalOnly = () => useRoadmapStore((state) => state.showExternalOnly ?? false);
+
+// Show external roadmap only filter
+// Snap mode selector
+export const useSnapMode = () => useRoadmapStore((state) => state.snapMode ?? 'day');
 
 // Temporal store (undo/redo) access
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

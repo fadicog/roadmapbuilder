@@ -2,7 +2,7 @@ import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { Timeline, DataSet } from 'vis-timeline/standalone';
 import 'vis-timeline/styles/vis-timeline-graph2d.min.css';
 import html2canvas from 'html2canvas';
-import { useItems, useReleaseMarkers, useCodeFreezeMarkers, useSprintConfig, useDisplaySprintCount, useRoadmapStore, useShowSprintActivities, useSelectedCategories, useShowExternalOnly } from '../store/roadmapStore';
+import { useItems, useReleaseMarkers, useCodeFreezeMarkers, useSprintConfig, useDisplaySprintCount, useRoadmapStore, useShowSprintActivities, useSelectedCategories, useShowExternalOnly, useSnapMode } from '../store/roadmapStore';
 import { SUBTASK_INFO, SUBTASK_ORDER, getEffectiveDates } from '../utils/subtaskAllocation';
 import {
   generateSprints,
@@ -324,13 +324,17 @@ export function TimelineView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<Timeline | null>(null);
   const sprintBandsContentRef = useRef<HTMLDivElement>(null);
+  // Refs to avoid stale closures in vis-timeline init useEffect
+  const snapModeRef = useRef<'day' | 'sprint'>('day');
+  const sprintsRef = useRef<Array<{ number: number; startDate: Date; endDate: Date }>>([]);
 
   const allItems = useItems();
   const releaseMarkers = useReleaseMarkers();
   const codeFreezeMarkers = useCodeFreezeMarkers();
   const sprintConfig = useSprintConfig();
   const displaySprintCount = useDisplaySprintCount();
-  const { updateSubtaskOverride, updateItem, deleteItem, addItemByDate, addFromPool, setShowSprintActivities, toggleCategory, setSelectedCategories, setShowExternalOnly } = useRoadmapStore();
+  const { updateSubtaskOverride, updateItem, deleteItem, addItemByDate, addFromPool, setShowSprintActivities, toggleCategory, setSelectedCategories, setShowExternalOnly, setSnapMode } = useRoadmapStore();
+  const snapMode = useSnapMode();
   const showSprintActivities = useShowSprintActivities();
   const selectedCategories = useSelectedCategories();
   const showExternalOnly = useShowExternalOnly();
@@ -618,7 +622,23 @@ export function TimelineView() {
         return;
       }
 
-      // Update item with new dates
+      // In sprint snap mode, convert dates to sprint numbers
+      if (snapModeRef.current === 'sprint') {
+        const currentSprints = sprintsRef.current;
+        // Find start sprint: last sprint whose startDate <= newStart
+        const startSprint = [...currentSprints].reverse().find(s => s.startDate <= newStart)?.number ?? currentSprints[0]?.number;
+        // Find end sprint: last sprint whose startDate <= newEnd
+        const endSprint = [...currentSprints].reverse().find(s => s.startDate <= newEnd)?.number ?? currentSprints[currentSprints.length - 1]?.number;
+        if (startSprint !== undefined && endSprint !== undefined && endSprint >= startSprint) {
+          updateItem(timelineItem.itemId!, { startSprint, endSprint, startDate: undefined, endDate: undefined });
+          callback(itemData);
+        } else {
+          callback(null);
+        }
+        return;
+      }
+
+      // Update item with new dates (day mode)
       updateItem(timelineItem.itemId!, {
         startDate: toISODateString(newStart),
         endDate: toISODateString(newEnd),
@@ -775,6 +795,10 @@ export function TimelineView() {
     });
   }, [sprintConfig.firstSprintNumber]);
 
+  // Keep refs current so vis-timeline init useEffect always has fresh data
+  snapModeRef.current = snapMode;
+  sprintsRef.current = sprints;
+
   // Stable ref so the rangechange listener always calls the latest version
   // without needing to rebind the event.
   const updateSprintBandsRef = useRef<() => void>(() => {});
@@ -893,6 +917,20 @@ export function TimelineView() {
         overrideItems: true, // Allow per-item editable settings
       },
       snap: (date: Date) => {
+        if (snapModeRef.current === 'sprint') {
+          const currentSprints = sprintsRef.current;
+          let minDist = Infinity;
+          let nearestDate = new Date(date);
+          currentSprints.forEach((sprint) => {
+            const startMs = sprint.startDate.getTime();
+            const endMs = addDays(sprint.endDate, 1).getTime();
+            const startDist = Math.abs(startMs - date.getTime());
+            const endDist = Math.abs(endMs - date.getTime());
+            if (startDist < minDist) { minDist = startDist; nearestDate = new Date(sprint.startDate); }
+            if (endDist < minDist) { minDist = endDist; nearestDate = addDays(sprint.endDate, 1); }
+          });
+          return nearestDate;
+        }
         const d = new Date(date);
         d.setHours(0, 0, 0, 0);
         return d;
@@ -1648,6 +1686,20 @@ export function TimelineView() {
         <div className="timeline-header-top">
           <h2>Roadmap Timeline</h2>
           <div className="timeline-controls">
+            <div className="snap-mode-toggle" title="Drag snap mode: Day snaps to day boundaries, Sprint snaps to sprint start/end">
+              <button
+                className={`snap-mode-btn ${snapMode === 'day' ? 'active' : ''}`}
+                onClick={() => setSnapMode('day')}
+              >
+                Day
+              </button>
+              <button
+                className={`snap-mode-btn ${snapMode === 'sprint' ? 'active' : ''}`}
+                onClick={() => setSnapMode('sprint')}
+              >
+                Sprint
+              </button>
+            </div>
             <label className="toggle-label">
               <input
                 type="checkbox"

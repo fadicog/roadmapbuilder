@@ -29,7 +29,16 @@ export interface PoolItem {
   remarks: string;
   alreadyPickedUp: boolean;
   startSprint: number | null;
+  endSprint?: number | null;
   externalVisible: boolean; // Whether this item should appear in external/public roadmap
+  // Epic detail fields (from PPT roadmap)
+  epicName?: string;
+  objectives?: string[];
+  description?: string;
+  acceptanceCriteria?: string[];
+  owners?: string[];
+  dependencies?: string[];
+  targetAudience?: string[];
 }
 
 // Sprint configuration
